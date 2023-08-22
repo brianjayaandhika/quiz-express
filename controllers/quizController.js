@@ -46,6 +46,11 @@ const quizController = {
         answeredQuiz: [...user.answeredQuiz, id],
       });
 
+      // Cek jawaban dari user
+      if (answer === correctOption) {
+        // DAPETIN SCORENYA, SELESAIN FUNCTION CALCULATE SCORE.
+      }
+
       redis.del('questionSent');
       redis.set('isAnswered', true);
     } catch (error) {
