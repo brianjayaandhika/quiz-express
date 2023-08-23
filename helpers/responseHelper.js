@@ -15,6 +15,9 @@ const responseHelpers = (res, status, data, message) => {
       status: 'Error',
       statusCode: status,
       message: errorMessage,
+      if(data) {
+        data;
+      },
     });
   }
 

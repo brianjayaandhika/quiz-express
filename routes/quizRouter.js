@@ -4,7 +4,7 @@ import quizController from '../controllers/quizController.js';
 
 const quizRouter = express.Router();
 
-quizRouter.get('/', quizController.getQuiz);
-quizRouter.post('/', quizController.answerQuiz);
+quizRouter.get('/:username', quizController.getQuiz);
+quizRouter.post('/:username', quizController.answerQuiz);
 
 export default quizRouter;

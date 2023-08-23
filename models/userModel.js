@@ -11,13 +11,17 @@ const userModel = (sequelize) =>
       type: DataTypes.STRING,
       allowNull: false,
     },
+    phone: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
     score: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
     },
-    answeredQuiz: {
+    progress: {
       type: DataTypes.JSON,
-      defaultValue: [],
+      defaultValue: {},
     },
   });
 

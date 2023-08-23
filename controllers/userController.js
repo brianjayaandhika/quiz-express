@@ -5,9 +5,9 @@ import { generateAuthToken } from '../services/generateToken.js';
 const userController = {
   registerUser: async (req, res) => {
     try {
-      const { username, password } = req.body;
+      const { username, password, phone } = req.body;
 
-      if (!username || !password) {
+      if (!username || !password || !phone) {
         responseHelper(res, 400, null, 'Register Failed!');
         return;
       }
@@ -67,13 +67,14 @@ const userController = {
   getProfile: async (req, res) => {
     try {
       const selectedUser = await user.findByPk(req.params.username);
-      const { username, score, answeredQuiz } = await selectedUser;
+      const { username, phone, score, progress } = await selectedUser;
 
       if (selectedUser) {
         const data = {
           username,
+          phone,
           score,
-          answeredQuiz: answeredQuiz.length < 1 ? 'No Answered Quiz' : selectedUser.answeredQuiz,
+          progress: Object.keys(progress).length < 1 ? 'No progress has been made' : selectedUser.progress,
         };
 
         responseHelper(res, 200, data, 'Get Profile Success');
@@ -81,6 +82,7 @@ const userController = {
         responseHelper(res, 404, null, 'User not found');
       }
     } catch (error) {
+      console.log(error);
       responseHelper(res, 500, null, 'Internal Server Error');
     }
   },
@@ -88,7 +90,7 @@ const userController = {
   getAllUser: async (req, res) => {
     try {
       const allUser = await user.findAll({
-        attributes: ['username', 'role', 'email', 'verified'],
+        attributes: ['username', 'score', 'progress'],
       });
       responseHelper(res, 200, allUser, 'Get All User Success');
     } catch (error) {
