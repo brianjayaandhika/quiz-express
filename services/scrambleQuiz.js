@@ -1,8 +1,6 @@
 import { soalQuiz } from '../database/soal.js';
 import { user } from '../database/db.js';
-import Redis from 'ioredis';
-
-const redis = new Redis();
+import { getData, setData, deleteData } from '../helpers/redisHelper.js';
 
 const bucketQuiz = [
   [1, 20, 21, 40, 41, 60, 61, 80, 81, 100, 101, 120, 121, 140, 141],
@@ -22,69 +20,101 @@ const scoreToPass = [105, 110, 115, 120, 125, 130, 135, 140, 145, 150];
 export const scrambleQuiz = async (username) => {
   // Ambil user dan nomor terakhir dari nomor telfon user
   const selectedUser = await user.findByPk(username);
-  const lastNumberOfPhone = selectedUser.phone[selectedUser.phone.length - 1];
+  const lastNumberOfPhone = Number(selectedUser.phone[selectedUser.phone.length - 1]);
 
   // Ambil waktu saat function dipanggil
   const sentAt = new Date().getTime();
-  redis.set(`${selectedUser.username}-sentAt`, sentAt);
+  await setData(`${selectedUser.username}-sentAt`, sentAt);
 
   // Menentukan nomor berapa yang dikirimkan
 
   // Ronde sekarang
-  let currentRound = await redis.get(`${selectedUser.username}-currentRound`);
+  let currentRound = await getData(`${selectedUser.username}-currentRound`);
   // Pertanyaan pada ronde tertentu
-  let specificQuestion = await redis.get(`${selectedUser.username}-columnBucketQuiz`);
+  let columnBucketQuiz = await getData(`${selectedUser.username}-columnBucketQuiz`);
+  let rowBucketQuiz = await getData(`${selectedUser.username}-rowBucketQuiz`);
 
-  if (currentRound === null || specificQuestion === null) {
+  if (!currentRound && !columnBucketQuiz && !rowBucketQuiz) {
     currentRound = 1;
-    specificQuestion = 0;
+    columnBucketQuiz = 0;
+    rowBucketQuiz = lastNumberOfPhone;
     // ronde keberapa
-    await redis.set(`${selectedUser.username}-currentRound`, currentRound);
+    await setData(`${selectedUser.username}-currentRound`, currentRound);
+    // baris keberapa (untuk pertanyaan)
+    await setData(`${selectedUser.username}-rowBucketQuiz`, rowBucketQuiz);
     // kolom keberapa (untuk pertanyaan)
-    await redis.set(`${selectedUser.username}-columnBucketQuiz`, 0);
+    await setData(`${selectedUser.username}-columnBucketQuiz`, columnBucketQuiz);
     // ngitung berapa jumlah pertanyaan yang udah dijawab
-    await redis.set(`${selectedUser.username}-totalQuestionDone`, 0);
+    await setData(`${selectedUser.username}-totalQuestionDone`, 0);
   } else {
-    const totalQuestionsAnswered = selectedUser.progress.questionAnswered;
-
-    if (totalQuestionsAnswered % 15 === 0) {
-      // const currentScoreToPass = currentRound - 1;
-      // if (selectedUser.score < scoreToPass[currentScoreToPass]) {
-      //   // Reset progress and return failure response
-      //   await redis.del(`${selectedUser.username}-columnBucketQuiz`);
-      //   await redis.del(`${selectedUser.username}-totalQuestionDone`);
-      //   await redis.del(`${selectedUser.username}-currentRound`);
-      //   await redis.del(`${selectedUser.username}-isAnswered`);
-      //   await redis.del(`${selectedUser.username}-sentAt`);
-
-      //   await selectedUser.update({
-      //     progress: {
-      //       status: 'Failed',
-      //     },
-      //   });
-
-      //   return -1;
-      // }
+    if (columnBucketQuiz % 14 === 0 && columnBucketQuiz > 1) {
+      const currentScoreToPass = currentRound - 1;
 
       currentRound++;
-      await redis.set(`${selectedUser.username}-currentRound`, currentRound);
-      await redis.set(`${selectedUser.username}-columnBucketQuiz`, 0);
+      rowBucketQuiz++;
+      columnBucketQuiz = 0;
+
+      await selectedUser.update({
+        progress: {
+          status: 'On Going',
+          totalQuestionDone: await getData(`${selectedUser.username}-totalQuestionDone`),
+          currentRound: await getData(`${selectedUser.username}-currentRound`),
+          scoreOfCurrentRound: 0,
+        },
+      });
+
+      if (currentRound > 10) {
+        await selectedUser.update({
+          progress: {
+            status: 'Finished',
+            totalQuestionDone,
+            currentRound,
+            scoreOfCurrentRound,
+          },
+        });
+
+        return 'finished';
+      }
+
+      if (selectedUser.progress.scoreOfCurrentRound < scoreToPass[currentScoreToPass]) {
+        // Reset progress and return failure response
+        await selectedUser.update({
+          progress: {
+            status: 'Failed',
+            totalQuestionDone: await getData(`${selectedUser.username}-totalQuestionDone`),
+            currentRound,
+            scoreOfCurrentRound: selectedUser.progress.scoreOfCurrentRound,
+          },
+        });
+
+        return 'failed';
+      }
+
+      if (rowBucketQuiz > 9) {
+        rowBucketQuiz = 0;
+      }
+
+      await setData(`${selectedUser.username}-currentRound`, currentRound);
+      await setData(`${selectedUser.username}-rowBucketQuiz`, rowBucketQuiz);
+      await deleteData(`${selectedUser.username}-columnBucketQuiz`, columnBucketQuiz);
     } else {
-      specificQuestion = specificQuestion;
-      specificQuestion++;
-      await redis.set(`${selectedUser.username}-columnBucketQuiz`, specificQuestion);
+      columnBucketQuiz++;
+      await setData(`${selectedUser.username}-columnBucketQuiz`, columnBucketQuiz);
     }
   }
 
-  const bucketQuizRow = lastNumberOfPhone - 1;
-  const questionIndex = bucketQuiz[bucketQuizRow][Number(specificQuestion)];
-
   // Buat isAnswered jd belom dijawab!
-  redis.set(`${selectedUser.username}-isAnswered`, false); // key utk cek apakah sudah dijawab atau belum
+
+  let questionIndex = bucketQuiz[rowBucketQuiz][columnBucketQuiz] - 1;
+
+  const { type, soal, answer, correctOption } = soalQuiz.soal[questionIndex];
 
   // Data yang akan dikirim
   const result = {
-    soal: soalQuiz.soal[questionIndex],
+    type,
+    soal,
+    answer,
+    correctOption,
     timeSentAt: sentAt,
   };
 

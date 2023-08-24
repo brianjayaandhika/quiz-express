@@ -5,11 +5,13 @@ import jwtController from '../controllers/verifyController.js';
 
 const userRouter = express.Router();
 
-// verifyController.verifyToken
+verifyController.verifyToken;
 
 userRouter.post('/register', userController.registerUser);
 userRouter.post('/login', userController.loginUser);
-userRouter.get('/view/:username', userController.getProfile);
-userRouter.get('/all-user', userController.getAllUser);
+userRouter.post('/logout/:username', verifyController.verifyToken, userController.logoutUser);
+userRouter.get('/view/:username', verifyController.verifyToken, userController.getProfile);
+userRouter.get('/leaderboard', userController.getLeaderboard);
+userRouter.post('/reset/:username', verifyController.verifyToken, userController.resetUser);
 
 export default userRouter;

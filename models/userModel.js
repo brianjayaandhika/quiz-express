@@ -15,13 +15,18 @@ const userModel = (sequelize) =>
       type: DataTypes.STRING,
       allowNull: false,
     },
-    score: {
+    totalScore: {
       type: DataTypes.INTEGER,
       defaultValue: 0,
     },
     progress: {
       type: DataTypes.JSON,
-      defaultValue: {},
+      defaultValue: {
+        status: '',
+        totalQuestionDone: 0,
+        currentRound: 1,
+        scoreOfCurrentRound: 0,
+      },
     },
   });
 

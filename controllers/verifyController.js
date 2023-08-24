@@ -1,59 +1,43 @@
 import jwt from 'jsonwebtoken';
 import responseHelper from '../helpers/responseHelper.js';
-import { user } from '../database/db.js';
+import { getData } from '../helpers/redisHelper.js';
 
 const jwtController = {
-  verifyToken: (req, res, next) => {
-    let tokenHeader = req.headers['access-token'];
-
-    if (!tokenHeader) {
-      responseHelper(res, 404, null, 'Token not provided');
-    }
-
-    let token = tokenHeader.split(' ')[1];
-
-    if (tokenHeader.split(' ')[0] !== 'Bearer') {
-      responseHelper(res, 400, null, 'Incorrect token format');
-    }
-
-    jwt.verify(token, 'secret', (err, decoded) => {
-      if (err) {
-        responseHelper(res, 403, null, 'Forbidden');
-      }
-      req.userRole = decoded.role;
-      next();
-    });
-  },
-
-  verifyEmail: async (req, res) => {
+  verifyToken: async (req, res, next) => {
     try {
-      const selectedUser = await user.findByPk(req.params.username);
+      if (!req?.headers?.['access-token']) {
+        return responseHelper(res, 403, null, 'No token provided');
+      }
 
-      if (selectedUser) {
-        if (selectedUser.verified) {
-          responseHelper(res, 400, null, 'Email is already verified');
-        } else {
-          selectedUser.update({ verified: true });
-          responseHelper(res, 200, null, 'Email Has Been Verified');
+      let tokenHeader = req.headers['access-token'];
+
+      let token = tokenHeader.split(' ')[1];
+
+      if (tokenHeader.split(' ')[0] !== 'Bearer') {
+        return responseHelper(res, 400, null, 'Incorrect token format');
+      }
+
+      jwt.verify(token, 'secret', async (err, decoded) => {
+        if (err) {
+          return responseHelper(res, 403, null, 'Forbidden');
         }
-      } else {
-        responseHelper(res, 404, null, 'User not found');
-      }
-    } catch (error) {
-      responseHelper(res, 500, null, 'Internal Server Error');
-    }
-  },
 
-  verifyForgotPassword: async (req, res) => {
-    try {
-      const selectedUser = await user.findByPk(req.params.username);
+        const tokenPerUser = await getData(`${decoded?.username}-token`);
 
-      if (selectedUser) {
-        selectedUser.update({ password: req.body.newPassword });
-        responseHelper(res, 200, null, 'Change password successful');
-      }
+        if (!tokenPerUser) {
+          return responseHelper(res, 403, null, 'No login token detected');
+        }
+
+        if (`Bearer ${token}` === tokenPerUser[1] && req.params.username === tokenPerUser[0]) {
+          next();
+          return -1;
+        }
+
+        return responseHelper(res, 403, null, 'Authorization failed');
+      });
     } catch (error) {
-      responseHelper(res, 500, null, 'Internal Server Error');
+      console.log(error);
+      return responseHelper(res, 500, null, 'Internal Server Error');
     }
   },
 };

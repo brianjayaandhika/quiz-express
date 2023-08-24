@@ -1,6 +1,7 @@
 import { user } from '../database/db.js';
 import responseHelper from '../helpers/responseHelper.js';
 import { generateAuthToken } from '../services/generateToken.js';
+import { deleteData, setData } from '../helpers/redisHelper.js';
 
 const userController = {
   registerUser: async (req, res) => {
@@ -8,8 +9,7 @@ const userController = {
       const { username, password, phone } = req.body;
 
       if (!username || !password || !phone) {
-        responseHelper(res, 400, null, 'Register Failed!');
-        return;
+        return responseHelper(res, 400, null, 'Register Failed!');
       }
 
       const duplicateUsername = await user.findAll({
@@ -44,11 +44,12 @@ const userController = {
         });
 
         if (checkLogin.length > 0) {
-          const token = generateAuthToken(username, checkLogin[0].role);
+          const token = generateAuthToken(username);
+
+          await setData(`${username}-token`, [username, token], 3600);
 
           const loginSession = {
             username,
-            role: checkLogin[0].role,
             token,
           };
 
@@ -57,7 +58,17 @@ const userController = {
         return responseHelper(res, 400, null, 'Login Failed!');
       }
 
-      responseHelper(res, 400, null, 'Need username and password to login!');
+      return responseHelper(res, 400, null, 'Need username and password to login!');
+    } catch (error) {
+      console.log(error);
+      responseHelper(res, 500, null, 'Internal Server Error');
+    }
+  },
+
+  logoutUser: async (req, res) => {
+    try {
+      await deleteData(`${req.params.username}-token`);
+      return responseHelper(res, 200, null, 'Logout Success!');
     } catch (error) {
       console.log(error);
       responseHelper(res, 500, null, 'Internal Server Error');
@@ -67,17 +78,17 @@ const userController = {
   getProfile: async (req, res) => {
     try {
       const selectedUser = await user.findByPk(req.params.username);
-      const { username, phone, score, progress } = await selectedUser;
+      const { username, phone, totalScore, progress } = await selectedUser;
 
       if (selectedUser) {
         const data = {
           username,
           phone,
-          score,
+          totalScore,
           progress: Object.keys(progress).length < 1 ? 'No progress has been made' : selectedUser.progress,
         };
 
-        responseHelper(res, 200, data, 'Get Profile Success');
+        responseHelper(res, 200, data, 'Get user detail success');
       } else {
         responseHelper(res, 404, null, 'User not found');
       }
@@ -87,14 +98,55 @@ const userController = {
     }
   },
 
-  getAllUser: async (req, res) => {
+  getLeaderboard: async (req, res) => {
     try {
       const allUser = await user.findAll({
-        attributes: ['username', 'score', 'progress'],
+        attributes: ['username', 'totalScore'],
       });
-      responseHelper(res, 200, allUser, 'Get All User Success');
+
+      const sortByScore = allUser.sort((a, b) => b.totalScore - a.totalScore);
+      responseHelper(res, 200, sortByScore, 'Get leaderboard success');
     } catch (error) {
+      console.log(error);
       responseHelper(res, 500, null, 'Internal Server Error');
+    }
+  },
+
+  resetUser: async (req, res) => {
+    try {
+      const selectedUser = await user.findByPk(req.params.username);
+
+      if (!selectedUser) {
+        return responseHelper(res, 404, null, 'User not found');
+      }
+
+      await selectedUser.update({
+        progress: {
+          status: 'On Going',
+          totalQuestionDone: 0,
+          currentRound: 1,
+          scoreOfCurrentRound: 0,
+        },
+        totalScore: 0,
+      });
+
+      const arrayOfCache = [
+        'questionSent',
+        'rowBucketQuiz',
+        'sentAt',
+        'columnBucketQuiz',
+        'currentRound',
+        'totalQuestionDone',
+      ];
+
+      arrayOfCache.map(async (item) => {
+        await deleteData(`${selectedUser.username}-${item}`);
+      });
+
+      return responseHelper(res, 200, null, 'Reset user success');
+    } catch (error) {
+      console.log(error);
+      return responseHelper(res, 500, null, 'Internal Server Error');
     }
   },
 };

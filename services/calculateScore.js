@@ -13,7 +13,6 @@ export const calculateScore = async (time, isCorrect, userParam) => {
 
   // To get score
   let score;
-  let totalQuestion = await redis.get(`${selectedUser.username}-totalQuestionDone`);
 
   if (!isCorrect) {
     score = -5;
@@ -35,6 +34,9 @@ export const calculateScore = async (time, isCorrect, userParam) => {
         score = 6;
         break;
       case timeDiff <= 60:
+        score = 0;
+        break;
+      case timeDiff >= 60:
         score = 0;
         break;
       default:
