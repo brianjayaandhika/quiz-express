@@ -5,17 +5,19 @@ import { getData } from '../helpers/redisHelper.js';
 const jwtController = {
   verifyToken: async (req, res, next) => {
     try {
-      if (!req?.headers?.['access-token']) {
+      const tokenHeader = req.headers['access-token'];
+
+      if (!tokenHeader) {
         return responseHelper(res, 403, null, 'No token provided');
       }
 
-      let tokenHeader = req.headers['access-token'];
+      const tokenParts = tokenHeader.split(' ');
 
-      let token = tokenHeader.split(' ')[1];
-
-      if (tokenHeader.split(' ')[0] !== 'Bearer') {
+      if (tokenParts.length !== 2 || tokenParts[0] !== 'Bearer') {
         return responseHelper(res, 400, null, 'Incorrect token format');
       }
+
+      const token = tokenParts[1];
 
       jwt.verify(token, 'secret', async (err, decoded) => {
         if (err) {
@@ -28,12 +30,13 @@ const jwtController = {
           return responseHelper(res, 403, null, 'No login token detected');
         }
 
-        if (`Bearer ${token}` === tokenPerUser[1] && req.params.username === tokenPerUser[0]) {
-          next();
-          return -1;
-        }
+        const [storedUsername, storedToken] = tokenPerUser;
 
-        return responseHelper(res, 403, null, 'Authorization failed');
+        if (`Bearer ${token}` === storedToken && req.params.username === storedUsername) {
+          next();
+        } else {
+          return responseHelper(res, 403, null, 'Authorization failed');
+        }
       });
     } catch (error) {
       console.log(error);
@@ -41,4 +44,5 @@ const jwtController = {
     }
   },
 };
+
 export default jwtController;

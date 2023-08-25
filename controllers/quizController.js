@@ -9,8 +9,9 @@ const quizController = {
     try {
       const selectedUser = await user.findByPk(req.params.username);
 
-      // Kalo udah faile gabisa, harus try again
-      if (selectedUser.progress.status === 'Failed') {
+      const progressStatus = selectedUser.progress.status;
+
+      if (progressStatus === 'Failed') {
         return responseHelper(
           res,
           403,
@@ -19,16 +20,13 @@ const quizController = {
         );
       }
 
-      // Kalo udah finished juga gabisa.
-      if (selectedUser.progress.status === 'Finished') {
+      if (progressStatus === 'Finished') {
         return responseHelper(res, 403, null, 'You have completed the quiz!');
       }
 
-      // Ngecek, kalo misalnya udah ada pertanyaan sebelomnya maka jangan kasih pertanyaan baru
       const existingQuestion = await getData(`${selectedUser.username}-questionSent`);
 
-      // Kondisi untuk apabila pertanyaan sudah dijawab / belum
-      if (existingQuestion !== null) {
+      if (existingQuestion) {
         const catchDataToSend = {
           soal: existingQuestion.soal,
           pilihan: existingQuestion.answer,
@@ -42,7 +40,6 @@ const quizController = {
         });
       }
 
-      // Panggil fungsi buat nerima pertanyaan
       const quizzes = await scrambleQuiz(req.params.username);
 
       if (quizzes === 'failed') {
@@ -53,7 +50,6 @@ const quizController = {
         return responseHelper(res, 201, null, 'You have completed the quiz!');
       }
 
-      // data yang akan ditampilkan
       await setData(`${selectedUser.username}-questionSent`, quizzes);
 
       const data = {
@@ -71,32 +67,30 @@ const quizController = {
 
   answerQuiz: async (req, res) => {
     try {
-      // Cek user dan jawaban yang diberikan
       const selectedUser = await user.findByPk(req.params.username);
-      const { answer } = await req.body;
-      // hande untuk menyimpan pertanyaan di redis
+      const { answer } = req.body;
+      const lowerCasedAnswer = answer.toLowerCase();
       const question = await getData(`${selectedUser.username}-questionSent`);
-      // untuk mendapatkan waktu pada saat menjawab pertanyaan
       const answeredAt = new Date();
-      let scoreResult = 0;
-      let currentRoundScore = parseInt(selectedUser.progress.scoreOfCurrentRound) || 0;
 
-      // Handle kalau user tidak ada
       if (!selectedUser) {
         return responseHelper(res, 400, null, 'User not found!');
       }
 
-      // handle kalau tidak ada jawaban di body
       if (!answer) {
         return responseHelper(res, 400, null, 'Please give an answer!');
       }
 
-      // kalo gaada pertanyaan, kasih eror
+      const validOptions = ['a', 'b', 'c', 'd'];
+
+      if (!validOptions.includes(lowerCasedAnswer)) {
+        return responseHelper(res, 403, null, 'Answer invalid!');
+      }
+
       if (!question) {
         return responseHelper(res, 404, null, 'No question available');
       }
 
-      // handle kalau status sudah gagal
       if (selectedUser.progress.status === 'Failed') {
         return responseHelper(
           res,
@@ -106,48 +100,38 @@ const quizController = {
         );
       }
 
-      // ambil id, dadn juga jawaban yang bener
       const { correctOption } = question;
+      const isCorrect = lowerCasedAnswer === correctOption.toLowerCase();
+      const scoreResult = await calculateScore(answeredAt, isCorrect, selectedUser);
 
-      // cek kebenaran jawaban
-      if (answer.toLowerCase() == correctOption.toLowerCase()) {
-        scoreResult = await calculateScore(answeredAt, true, selectedUser);
-      } else {
-        scoreResult = await calculateScore(answeredAt, false, selectedUser);
-      }
-
-      // menghitung total yang sudah dijawab
       let totalQuestionDone = parseInt(await getData(`${selectedUser.username}-totalQuestionDone`));
-
       totalQuestionDone++;
       await setData(`${selectedUser.username}-totalQuestionDone`, totalQuestionDone);
 
-      // menghapus data pertanyaan yang sudah dijawab
       await deleteData(`${selectedUser.username}-questionSent`);
       await deleteData(`${selectedUser.username}-sentAt`);
 
-      // mengupdate progress dan score dari user
-
+      let currentRoundScore = parseInt(selectedUser.progress.scoreOfCurrentRound) || 0;
       currentRoundScore += scoreResult;
+
+      const currentRound = parseInt(await getData(`${selectedUser.username}-currentRound`));
+      const columnBucketQuiz = parseInt(await getData(`${selectedUser.username}-columnBucketQuiz`)) || 0;
 
       await selectedUser.update({
         progress: {
-          status: `${totalQuestionDone === 150 ? 'Finished' : 'On Going'}`,
+          status: `${totalQuestionDone === 50 ? 'Finished' : 'On Going'}`,
           totalQuestionDone,
-          currentRound: await getData(`${selectedUser.username}-currentRound`),
+          currentRound,
           scoreOfCurrentRound: currentRoundScore,
         },
         totalScore: selectedUser.totalScore + scoreResult,
       });
 
-      return responseHelper(
-        res,
-        200,
-        null,
-        `${
-          answer.toLowerCase() == correctOption.toLowerCase() ? 'Correct answer' : 'Incorrect answer'
-        }, your score is now ${selectedUser.progress.scoreOfCurrentRound}`
-      );
+      const answerStatus = isCorrect ? 'Correct answer' : 'Incorrect answer';
+      const roundInfo = `You have answered ${columnBucketQuiz} out of 5 questions in round ${currentRound}`;
+      const responseMessage = `${answerStatus}, your score is now ${selectedUser.progress.scoreOfCurrentRound}. ${roundInfo}`;
+
+      return responseHelper(res, 200, null, responseMessage);
     } catch (error) {
       console.log(error);
       return responseHelper(res, 500, null, 'Internal Server Error');

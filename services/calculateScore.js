@@ -4,45 +4,40 @@ import { user } from '../database/db.js';
 const redis = new Redis();
 
 export const calculateScore = async (time, isCorrect, userParam) => {
-  const selectedUser = await user.findByPk(userParam.username);
+  try {
+    const selectedUser = await user.findByPk(userParam.username);
 
-  // To calculate time
-  const questionSentAt = await redis.get(`${selectedUser.username}-sentAt`);
-  const timeAnsweringQuestion = new Date(time).getTime() - questionSentAt;
-  const timeDiff = Math.ceil(timeAnsweringQuestion / 1000);
+    // Calculate time difference
+    const questionSentAt = parseInt(await redis.get(`${selectedUser.username}-sentAt`));
+    const timeAnsweringQuestion = new Date(time).getTime() - questionSentAt;
+    const timeDiffInSeconds = Math.floor(timeAnsweringQuestion / 1000);
 
-  // To get score
-  let score;
+    // Define scoring criteria
+    const scoringCriteria = [
+      { time: 10, score: 10 },
+      { time: 20, score: 9 },
+      { time: 30, score: 8 },
+      { time: 40, score: 7 },
+      { time: 50, score: 6 },
+      { time: 60, score: 5 },
+    ];
 
-  if (!isCorrect) {
-    score = -5;
-  } else {
-    switch (true) {
-      case timeDiff <= 10:
-        score = 10;
-        break;
-      case timeDiff <= 20:
-        score = 9;
-        break;
-      case timeDiff <= 30:
-        score = 8;
-        break;
-      case timeDiff <= 40:
-        score = 7;
-        break;
-      case timeDiff <= 50:
-        score = 6;
-        break;
-      case timeDiff <= 60:
-        score = 0;
-        break;
-      case timeDiff >= 60:
-        score = 0;
-        break;
-      default:
-        console.log('Something went wrong!!');
+    // Calculate score based on time and correctness
+    let score = 0;
+    if (isCorrect) {
+      for (const criteria of scoringCriteria) {
+        if (timeDiffInSeconds <= criteria.time) {
+          score = criteria.score;
+          break;
+        }
+      }
+    } else {
+      score = -5;
     }
-  }
 
-  return score;
+    return score;
+  } catch (error) {
+    console.log(error);
+    throw new Error('Error calculating score');
+  }
 };
