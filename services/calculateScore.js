@@ -1,14 +1,12 @@
-import Redis from 'ioredis';
 import { user } from '../database/db.js';
-
-const redis = new Redis();
+import { getData } from '../helpers/redisHelper.js';
 
 export const calculateScore = async (time, isCorrect, userParam) => {
   try {
     const selectedUser = await user.findByPk(userParam.username);
 
     // Calculate time difference
-    const questionSentAt = parseInt(await redis.get(`${selectedUser.username}-sentAt`));
+    const questionSentAt = await getData(`${selectedUser.username}-sentAt`);
     const timeAnsweringQuestion = new Date(time).getTime() - questionSentAt;
     const timeDiffInSeconds = Math.floor(timeAnsweringQuestion / 1000);
 
